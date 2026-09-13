@@ -127,15 +127,25 @@ package struct PlatformAudioInputConfigurationPlan: Hashable, Sendable {
   }
 }
 
-/// Internal platform seam for input discovery, mutation, and readback.
+/// Internal platform seam for session preparation, input discovery, mutation,
+/// and readback. Processing is established before resolving input choices;
+/// source and channel capabilities may depend on the session mode.
 ///
 /// iOS, macOS, and deterministic tests provide independent adapters. The
 /// public interface remains the request/state pair on `AudioEnvironmentManager`.
 package protocol PlatformAudioInputConfigurationAdapter: Sendable {
   func discover() async -> PlatformAudioInputSnapshot
+  /// Establishes the processing mode before discovering mode-dependent input
+  /// choices. Must skip platform writes when the session already matches.
+  func prepare(processing: AudioInputProcessingPreference) async throws
   func apply(
     _ plan: PlatformAudioInputConfigurationPlan,
   ) async throws -> PlatformAudioInputSnapshot
+}
+
+extension PlatformAudioInputConfigurationAdapter {
+  // Platforms without session processing modes need no preparation.
+  package func prepare(processing _: AudioInputProcessingPreference) async throws {}
 }
 
 package enum AudioInputConfigurationResolution: Hashable, Sendable {
@@ -346,6 +356,9 @@ package final class AudioInputConfigurationCoordinator {
   /// `nil` means "nothing is known about the platform", which always authorises
   /// a write.
   private var writeBarrier: PlatformWriteBarrier?
+  /// Preparation is idempotent on success. A rejected preparation is bounded
+  /// separately because it must run before a full input plan can be resolved.
+  private var preparationFailure: PreparationFailure?
 
   /// The reconciliation currently in flight, if any.
   private var activeRun: ReconcileRun?
@@ -472,10 +485,9 @@ package final class AudioInputConfigurationCoordinator {
     while true {
       let requested = state.requested
       let requestedGeneration = generation
-      let snapshot = await adapter.discover()
+      var snapshot = await adapter.discover()
       guard requestedGeneration == generation else { continue }
 
-      let applied = isActive ? snapshot.applied : nil
       guard isRunning else {
         return publish(
           requested: requested,
@@ -498,18 +510,59 @@ package final class AudioInputConfigurationCoordinator {
         )
       }
 
+      // Mode changes can add/remove inputs, sources, polar patterns, and
+      // channel choices. Resolving those choices first can reject the request
+      // before the mode setter is reached, trapping the session in Raw.
+      let previousFailure = preparationFailure.flatMap {
+        $0.generation == requestedGeneration && $0.route == snapshot.routeIdentity ? $0 : nil
+      }
+      if let previousFailure, previousFailure.retryBudget == 0, !forcePlatformApply {
+        return publish(
+          requested: requested,
+          generation: requestedGeneration,
+          snapshot: snapshot,
+          applied: snapshot.applied,
+          reconciliation: .unsatisfied(previousFailure.issue),
+        )
+      }
+      do {
+        try await adapter.prepare(processing: requested.processing)
+        preparationFailure = nil
+        snapshot = await adapter.discover()
+        guard requestedGeneration == generation else { continue }
+      } catch {
+        snapshot = await adapter.discover()
+        guard requestedGeneration == generation else { continue }
+        let issue = AudioInputConfigurationIssue.platformOperationFailed(String(describing: error))
+        preparationFailure = PreparationFailure(
+          generation: requestedGeneration,
+          route: snapshot.routeIdentity,
+          retryBudget: previousFailure.map { max(0, $0.retryBudget - 1) }
+            ?? policy.platformFailureRetryBudget,
+          issue: issue,
+        )
+        return publish(
+          requested: requested,
+          generation: requestedGeneration,
+          snapshot: snapshot,
+          applied: snapshot.applied,
+          reconciliation: .unsatisfied(issue),
+        )
+      }
+      let preparedApplied = snapshot.applied
+
       switch AudioInputConfigurationResolver.resolve(
         requested: requested,
         generation: requestedGeneration,
         capabilities: snapshot.capabilities,
-        currentApplied: applied,
+        currentApplied: preparedApplied,
       ) {
       case .deferred(let reason):
         return publish(
           requested: requested,
           generation: requestedGeneration,
           snapshot: snapshot,
-          applied: applied,
+          applied: preparedApplied,
           reconciliation: .deferred(reason),
         )
       case .unsupported(let issue):
@@ -517,7 +570,7 @@ package final class AudioInputConfigurationCoordinator {
           requested: requested,
           generation: requestedGeneration,
           snapshot: snapshot,
-          applied: applied,
+          applied: preparedApplied,
           reconciliation: .unsatisfied(issue),
         )
       case .apply(let plan):
@@ -541,15 +594,15 @@ package final class AudioInputConfigurationCoordinator {
             requested: requested,
             generation: requestedGeneration,
             snapshot: snapshot,
-            applied: applied,
-            reconciliation: Self.classify(readback: applied, expected: plan),
+            applied: preparedApplied,
+            reconciliation: Self.classify(readback: preparedApplied, expected: plan),
           )
         }
         _ = publish(
           requested: requested,
           generation: requestedGeneration,
           snapshot: snapshot,
-          applied: applied,
+          applied: preparedApplied,
           reconciliation: .reconciling,
         )
         do {
@@ -616,6 +669,7 @@ package final class AudioInputConfigurationCoordinator {
     // barrier was describing, so nothing is known any more and recovery is free
     // to write once.
     writeBarrier = nil
+    preparationFailure = nil
     state = AudioInputConfigurationState(
       requested: state.requested,
       requestedGeneration: generation,
@@ -757,6 +811,13 @@ package final class AudioInputConfigurationCoordinator {
     let plan: PlatformAudioInputConfigurationPlan
     var observed: PlatformAudioInputSnapshot
     var retryBudget: Int
+  }
+
+  private struct PreparationFailure {
+    let generation: UInt64
+    let route: PlatformAudioInputSnapshot.RouteIdentity
+    let retryBudget: Int
+    let issue: AudioInputConfigurationIssue
   }
 
   /// Whether the platform's applied state moved between two *settled*

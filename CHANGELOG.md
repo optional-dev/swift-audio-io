@@ -5,6 +5,18 @@ All notable changes to AudioIO are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com) categories, and
 releases follow the versioning policy in `README.md` and `ROADMAP.md`.
 
+## 0.18.3 - 2026-09-13
+
+### Fixed
+
+- Repeated Raw/Processed changes prepare the audio-session mode before
+  discovering and resolving microphone sources and channels. A choice that
+  disappears in Raw can no longer prevent switching back to Processed.
+  Requested input choices remain intact when a mode cannot provide them.
+- Processing preparation remains serialized with reconciliation, skips
+  unchanged session writes, and bounds retries after platform errors. Inactive
+  sessions still defer preparation until activation.
+
 ## 0.18.2 - 2026-08-27
 
 ### Changed

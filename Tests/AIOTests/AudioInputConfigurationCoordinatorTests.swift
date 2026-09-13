@@ -15,14 +15,25 @@ struct AudioInputConfigurationCoordinatorTests {
     var snapshot: PlatformAudioInputSnapshot
     var appliedPlans: [PlatformAudioInputConfigurationPlan] = []
     let throwsOnApply: Bool
+    let throwsOnPrepare: Bool
+    private var preparationCount = 0
 
     init(
       snapshot: PlatformAudioInputSnapshot,
       throwsOnApply: Bool = false,
+      throwsOnPrepare: Bool = false,
     ) {
       self.snapshot = snapshot
       self.throwsOnApply = throwsOnApply
+      self.throwsOnPrepare = throwsOnPrepare
     }
+
+    func prepare(processing _: AudioInputProcessingPreference) async throws {
+      preparationCount += 1
+      if throwsOnPrepare { throw AdapterFailure.rejected }
+    }
+
+    func preparations() -> Int { preparationCount }
 
     func discover() async -> PlatformAudioInputSnapshot {
       snapshot
@@ -116,6 +127,162 @@ struct AudioInputConfigurationCoordinatorTests {
         },
       )
     }
+  }
+
+  /// Processing changes can change the source/channel choices exposed by the
+  /// session. In particular, choices missing in Raw may return in Processed.
+  actor ProcessingAdapter: PlatformAudioInputConfigurationAdapter {
+    private var processing = AudioInputProcessingPreference.processed
+    private var appliedPlans: [PlatformAudioInputConfigurationPlan] = []
+    private var processingWrites = 0
+
+    func prepare(processing: AudioInputProcessingPreference) async throws {
+      guard self.processing != processing else { return }
+      processingWrites += 1
+      self.processing = processing
+    }
+
+    func writes() -> Int { processingWrites }
+    func plans() -> [PlatformAudioInputConfigurationPlan] { appliedPlans }
+
+    func discover() async -> PlatformAudioInputSnapshot {
+      let channels: ChannelCount = processing == .processed ? .stereo : .mono
+      let input = AudioInputSelection(id: "mic", name: "Mic", channelCount: channels)
+      let source = AudioSourceSelection(
+        id: processing == .processed ? "processed-source" : "raw-source",
+        name: "Source",
+      )
+      return PlatformAudioInputSnapshot(
+        capabilities: AudioInputConfigurationCapabilities(
+          discovery: .resolved,
+          inputs: [input],
+          effectiveInput: input,
+          sourceOptions: [
+            AudioSourceConfigurationOption(inputID: input.id, source: source, channels: channels)
+          ],
+          likelySampleRates: [.dvd],
+          activeSampleRate: .dvd,
+        ),
+        applied: AppliedAudioInputConfiguration(
+          input: input,
+          source: source,
+          format: InputConfiguration(sampleRate: .dvd, channels: channels),
+          processing: processing,
+        ),
+      )
+    }
+
+    func apply(
+      _ plan: PlatformAudioInputConfigurationPlan,
+    ) async throws -> PlatformAudioInputSnapshot {
+      appliedPlans.append(plan)
+      return await discover()
+    }
+  }
+
+  @Test(arguments: [false, true])
+  @MainActor
+  func `processing can switch back after Raw removes requested input choices`(
+    selectsSource: Bool
+  ) async throws {
+    let defaults = try isolatedDefaults()
+    let adapter = ProcessingAdapter()
+    let coordinator = AudioInputConfigurationCoordinator(defaults: defaults, adapter: adapter)
+    var request = AudioInputConfigurationRequest.automatic
+    request.channels = .stereo
+    if selectsSource {
+      request.source = .specific(sourceID: "processed-source", polarPatternID: nil)
+    }
+
+    for processing: AudioInputProcessingPreference in [
+      .processed, .measurement, .processed, .measurement, .processed,
+    ] {
+      request.processing = processing
+      let state = await coordinator.submit(request, isRunning: true, isActive: true)
+      #expect(state.requested == request)
+      #expect(state.applied?.processing == processing)
+      if processing == .processed {
+        #expect(state.reconciliation == .satisfied)
+        #expect(state.applied?.format.channels == .stereo)
+      } else {
+        #expect(
+          state.reconciliation == .unsatisfied(
+            selectsSource
+              ? .unsupportedSource(id: "processed-source") : .unsupportedChannels(.stereo)
+          )
+        )
+      }
+    }
+    let plans = await adapter.plans()
+    for _ in 0..<10 {
+      _ = await coordinator.reconcile(isRunning: true, isActive: true)
+    }
+    #expect(await adapter.writes() == 4)
+    #expect(await adapter.plans() == plans)
+  }
+
+  @Test
+  @MainActor
+  func `processing is prepared even while the requested input is unavailable`() async throws {
+    let adapter = ProcessingAdapter()
+    let coordinator = AudioInputConfigurationCoordinator(
+      defaults: try isolatedDefaults(), adapter: adapter,
+    )
+    let request = AudioInputConfigurationRequest(
+      input: .specific(id: "disconnected"), processing: .measurement,
+    )
+    let state = await coordinator.submit(request, isRunning: true, isActive: true)
+    #expect(state.requested == request)
+    #expect(state.applied?.processing == .measurement)
+    #expect(state.reconciliation == .deferred(.requestedInputUnavailable(id: "disconnected")))
+    #expect(await adapter.plans().isEmpty)
+  }
+
+  @Test
+  @MainActor
+  func `inactive processing request waits for activation`() async throws {
+    let adapter = ProcessingAdapter()
+    let coordinator = AudioInputConfigurationCoordinator(
+      defaults: try isolatedDefaults(), adapter: adapter,
+    )
+    let request = AudioInputConfigurationRequest(processing: .measurement)
+    let inactive = await coordinator.submit(request, isRunning: true, isActive: false)
+    #expect(inactive.requested == request)
+    #expect(inactive.applied == nil)
+    #expect(await adapter.writes() == 0)
+    let active = await coordinator.reconcile(isRunning: true, isActive: true)
+    #expect(active.applied?.processing == .measurement)
+    #expect(active.reconciliation == .satisfied)
+    #expect(await adapter.writes() == 1)
+  }
+
+  @Test
+  @MainActor
+  func `processing preparation failures retry within budget and a new request can retry`()
+    async throws
+  {
+    let adapter = ScriptedAdapter(
+      snapshot: stereoSnapshot(appliedChannels: .stereo), throwsOnPrepare: true,
+    )
+    let coordinator = AudioInputConfigurationCoordinator(
+      defaults: try isolatedDefaults(), adapter: adapter,
+      policy: AudioInputReconciliationPolicy(platformFailureRetryBudget: 2),
+    )
+    let request = AudioInputConfigurationRequest(processing: .measurement)
+    _ = await coordinator.submit(request, isRunning: true, isActive: true)
+    for _ in 0..<10 {
+      let state = await coordinator.reconcile(isRunning: true, isActive: true)
+      #expect(state.requested == request)
+      #expect(state.applied?.processing == .processed)
+      guard case .unsatisfied(.platformOperationFailed) = state.reconciliation else {
+        Issue.record("Expected a preparation failure, got \(state.reconciliation)")
+        return
+      }
+    }
+    #expect(await adapter.preparations() == 3)
+    #expect(await adapter.plans().isEmpty)
+    _ = await coordinator.submit(request, isRunning: true, isActive: true)
+    #expect(await adapter.preparations() == 4)
   }
 
   @Test

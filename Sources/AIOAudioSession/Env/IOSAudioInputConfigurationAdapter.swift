@@ -30,10 +30,7 @@
       Self.snapshot(environment: environment)
     }
 
-    func apply(
-      _ plan: PlatformAudioInputConfigurationPlan,
-    ) async throws -> PlatformAudioInputSnapshot {
-      let orientation = orientation
+    func prepare(processing: AudioInputProcessingPreference) async throws {
       let environment = environment
       let bluetoothMicrophone = bluetoothMicrophonePolicy.withLock { $0 }
       let result: Result<Void, AudioEnvironmentManager.ManagerError>? =
@@ -43,11 +40,30 @@
             try AudioEnvironmentManager.configureAudioSessionCategory(
               environment.session,
               configuration: .recordingConfiguration(
-                useMeasurement: plan.processing == .measurement,
+                useMeasurement: processing == .measurement,
                 bluetoothMicrophone: bluetoothMicrophone,
               ),
             )
+            return .success(())
+          } catch let error as AudioEnvironmentManager.ManagerError {
+            return .failure(error)
+          } catch {
+            return .failure(.unexpected(ErrorContext(error)))
+          }
+        }
+      guard let result else { throw AudioEnvironmentManager.ManagerError.notRunning }
+      try result.get()
+    }
 
+    func apply(
+      _ plan: PlatformAudioInputConfigurationPlan,
+    ) async throws -> PlatformAudioInputSnapshot {
+      let orientation = orientation
+      let environment = environment
+      let result: Result<Void, AudioEnvironmentManager.ManagerError>? =
+        await inputWriteQueue.submit {
+          () -> Result<Void, AudioEnvironmentManager.ManagerError> in
+          do {
             let preferredInput = plan.preferredInput.flatMap { selection in
               environment.availableInputs.first(where: { $0.id == selection.id })
             }
