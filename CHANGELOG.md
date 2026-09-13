@@ -5,6 +5,16 @@ All notable changes to AudioIO are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com) categories, and
 releases follow the versioning policy in `README.md` and `ROADMAP.md`.
 
+## 0.18.4 - 2026-09-13
+
+### Fixed
+
+- Live LOD snapshots now expose `committedLODCount`, the absolute bucket count
+  for the published data. Renderers can anchor geometry to that publication
+  instead of the independently advancing raw-audio cursor, preventing old
+  waveform peaks from moving as the publication lag changes. The count stays
+  monotonic across ring wraps and resets with the processor.
+
 ## 0.18.3 - 2026-09-13
 
 ### Fixed

@@ -32,6 +32,7 @@
   final class LODBufferSlot: @unchecked Sendable {
     let bands: [MutableBandBuffers]
     var writeIndex: Int = 0
+    var committedLODCount: Int = 0
     let lodRatio: Int
     let rawBufferLength: Int
     let bandCount: Int
@@ -73,6 +74,7 @@
 
     func reset() {
       writeIndex = 0
+      committedLODCount = 0
       for band in bands {
         band.reset()
       }
@@ -190,6 +192,14 @@
 
     public var writeIndex: Int {
       slot.writeIndex
+    }
+
+    /// Total LOD buckets in this publication since the last reset, including
+    /// buckets that have left the ring. Unlike the raw write head, this advances
+    /// only when the corresponding LOD data is published. Use it to position
+    /// live LOD geometry without mixing raw and published audio timelines.
+    public var committedLODCount: Int {
+      slot.committedLODCount
     }
 
     public var lodRatio: Int {
@@ -579,6 +589,7 @@
       }
 
       slot.writeIndex = unsafe (wIdx + 1) % configuration.lodBufferLength
+      slot.committedLODCount += 1
       unsafe deltaWrittenCount += 1
       unsafe writerWriteIndexAtomic.store(slot.writeIndex, ordering: .relaxed)
 
@@ -628,6 +639,7 @@
 
       // Continue writing at the same circular index.
       nextWriteSlot.writeIndex = publishedSlot.writeIndex
+      nextWriteSlot.committedLODCount = publishedSlot.committedLODCount
 
       // Atomically publish the new current slot.
       unsafe currentSlotIndex.store(newCurrent, ordering: .releasing)

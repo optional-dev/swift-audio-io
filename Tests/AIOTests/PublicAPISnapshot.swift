@@ -198,6 +198,7 @@ func publicAPISnapshot_AudioSignals() throws {
   _ = LODChannel.self
   _ = (any LODSnapshot).self
   _ = LODSnapshotRef.self
+  _ = \LODSnapshotRef.committedLODCount
   _ = LODTimelineLayout.self
   _ = LODWork.self
   _ = AnalysisWork.self
