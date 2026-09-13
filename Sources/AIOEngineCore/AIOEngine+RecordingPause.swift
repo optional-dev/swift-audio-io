@@ -166,8 +166,8 @@
       let liveFormat = await withEngineControlQueue(
         "live input format read",
         fallingBackTo: nil,
-      ) { [engine] () -> AVAudioFormat? in
-        engine.inputNode.inputFormat(forBus: 0)
+      ) { [self] () -> AVAudioFormat? in
+        self.engine.inputNode.inputFormat(forBus: 0)
       }
       guard let liveFormat, liveFormat.channelCount > 0, liveFormat.sampleRate > 0 else {
         await pauseRecording(reason: .sourceUnavailable("Input format became invalid"))

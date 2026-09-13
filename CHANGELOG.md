@@ -5,6 +5,15 @@ All notable changes to AudioIO are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com) categories, and
 releases follow the versioning policy in `README.md` and `ROADMAP.md`.
 
+## 0.18.5 - 2026-09-13
+
+### Fixed
+
+- The live input-format read captures its Sendable engine owner and accesses
+  `AVAudioEngine` inside the existing control-queue boundary. This restores
+  Xcode 26 compilation, whose SDK does not mark `AVAudioEngine` as Sendable.
+  Includes the published waveform timeline fix from 0.18.4.
+
 ## 0.18.4 - 2026-09-13
 
 ### Fixed
