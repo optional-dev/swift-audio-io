@@ -5,6 +5,17 @@ All notable changes to AudioIO are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com) categories, and
 releases follow the versioning policy in `README.md` and `ROADMAP.md`.
 
+## 0.19.0 - 2026-09-17
+
+### Changed
+
+- LOD publication happens at most once per process call, after all samples are
+  committed. Finalization publishes any remaining full or partial windows.
+- Zero-copy LOD refs capture all cursor metadata from one publication and expose
+  its generation, stable source identity, and `isStillPublished` validity check.
+  Refs survive the next process call; copies must be validated before use.
+  Retired refs are invalidated before their storage is recycled.
+
 ## 0.18.5 - 2026-09-13
 
 ### Fixed

@@ -67,9 +67,10 @@
     /// How to split frequencies across bands.
     public let crossoverMode: CrossoverMode
 
-    /// Number of LOD commits between snapshot slot swaps.
+    /// Minimum number of LOD commits between snapshot slot swaps.
     /// Controls how frequently the render thread sees updated data.
-    /// Default is 6, which at 44100Hz with lodRatio=128 gives ~57fps updates.
+    /// Default is 6. Publication occurs at the end of a process call, at most
+    /// once per call, and includes every commit in that call.
     /// Lower values = more frequent updates but more atomic operations.
     /// Higher values = less frequent updates but lower overhead.
     public let snapshotSwapInterval: Int
@@ -97,7 +98,7 @@
     ///   - bufferSeconds: Maximum buffer duration. Default: 300.
     ///   - sampleRate: Audio sample rate. Default: 44100.
     ///   - crossoverMode: Frequency splitting mode. Default: Mel scale.
-    ///   - snapshotSwapInterval: LOD commits between slot swaps. Default: 6 (~57fps).
+    ///   - snapshotSwapInterval: Minimum LOD commits before publication. Default: 6.
     public init(
       bandCount: Int = 5,
       lodRatio: Int = 128,

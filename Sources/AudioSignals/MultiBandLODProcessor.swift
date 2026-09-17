@@ -19,12 +19,16 @@
   /// by the triple-buffering protocol in `MultiBandLODProcessor`, NOT by internal
   /// synchronization. The safety invariants are:
   ///
-  /// 1. **Single writer**: Only the audio thread writes to slots, protected by `lock`
+  /// 1. **Single writer**: Only the audio thread writes to slots; there is no lock.
   /// 2. **Slot rotation**: The processor maintains 3 slots that rotate through states:
   ///    - Writing: Audio thread actively mutates this slot
   ///    - Current: Published for readers via atomic index, never written
   ///    - Retiring: Previous current, may still be read, never written
   /// 3. **Atomic publication**: `currentSlotIndex` is updated atomically after writes complete
+  /// 4. At most one publication per `process(_:)` call. A current ref survives
+  ///    the next full call as current or retiring. Readers must validate after
+  ///    copying; the second subsequent publication invalidates it before reuse.
+  ///    Reset requires readers and the writer to be quiescent.
   ///
   /// **Do not** access `LODBufferSlot` directly outside of `MultiBandLODProcessor`.
   /// Use `snapshotRef()` to obtain a safe `LODSnapshotRef` for reading.
@@ -33,6 +37,8 @@
     let bands: [MutableBandBuffers]
     var writeIndex: Int = 0
     var committedLODCount: Int = 0
+    var rawWriteIndex: Int = 0
+    let generation = ManagedAtomic<UInt64>(0)
     let lodRatio: Int
     let rawBufferLength: Int
     let bandCount: Int
@@ -75,6 +81,8 @@
     func reset() {
       writeIndex = 0
       committedLODCount = 0
+      rawWriteIndex = 0
+      generation.store(0, ordering: .relaxed)
       for band in bands {
         band.reset()
       }
@@ -145,16 +153,12 @@
   ///
   /// ## Thread Safety
   ///
-  /// This class is marked `@unchecked Sendable` because safety is guaranteed by
-  /// the triple-buffering protocol. The slot referenced here is either "current"
-  /// or "retiring" - never the one being written to. This is enforced by:
-  ///
-  /// 1. `snapshotRef()` reads `currentSlotIndex` with acquire ordering
-  /// 2. The audio thread only writes to `writeSlotIndex`, never `currentSlotIndex`
-  /// 3. Slot swaps atomically publish the write slot as current
-  ///
-  /// The reference is safe to use for the duration of a frame. Do not cache
-  /// `LODSnapshotRef` across frames; always call `snapshotRef()` each frame.
+  /// Scalar metadata is captured together at acquisition. LOD storage remains
+  /// readable through one full subsequent `process(_:)` call (one publication),
+  /// but can be recycled on the second publication. Check `isStillPublished`
+  /// after copying and discard invalid copies. Acquire a fresh ref each frame.
+  /// Reset requires quiescent readers. Raw sample storage is independently live;
+  /// the captured raw cursor describes the LOD publication, not later raw writes.
   ///
   /// ## Usage
   ///
@@ -177,29 +181,33 @@
     fileprivate let slot: LODBufferSlot
     fileprivate let rawStorage: RawBandStorage?
     public let rawWriteIndexSnapshot: Int
+    public let writeIndex: Int
+    public let committedLODCount: Int
+    public let publicationGeneration: UInt64
+    private let liveGeneration: ManagedAtomic<UInt64>
+
+    public var isStillPublished: Bool {
+      liveGeneration.load(ordering: .acquiring) &- publicationGeneration < 2
+    }
+
+    /// Stable identity of this processor's publications, independent of slot rotation.
+    public var sourceIdentity: ObjectIdentifier { ObjectIdentifier(liveGeneration) }
 
     fileprivate init(
-      _ slot: LODBufferSlot, rawStorage: RawBandStorage? = nil, rawWriteIndex: Int = 0,
+      _ slot: LODBufferSlot, rawStorage: RawBandStorage?,
+      generation: UInt64, liveGeneration: ManagedAtomic<UInt64>,
     ) {
       self.slot = slot
       unsafe self.rawStorage = rawStorage
-      rawWriteIndexSnapshot = rawWriteIndex
+      rawWriteIndexSnapshot = slot.rawWriteIndex
+      writeIndex = slot.writeIndex
+      committedLODCount = slot.committedLODCount
+      publicationGeneration = generation
+      self.liveGeneration = liveGeneration
     }
 
     public var bandCount: Int {
       slot.bandCount
-    }
-
-    public var writeIndex: Int {
-      slot.writeIndex
-    }
-
-    /// Total LOD buckets in this publication since the last reset, including
-    /// buckets that have left the ring. Unlike the raw write head, this advances
-    /// only when the corresponding LOD data is published. Use it to position
-    /// live LOD geometry without mixing raw and published audio timelines.
-    public var committedLODCount: Int {
-      slot.committedLODCount
     }
 
     public var lodRatio: Int {
@@ -251,7 +259,14 @@
 
     /// Convert to a copying snapshot (for compatibility or file export).
     public func toSnapshot() -> MultiBandLODSnapshot? {
-      slot.toSnapshot()
+      guard isStillPublished else { return nil }
+      let copy = MultiBandLODSnapshot(
+        bands: slot.bands.map { band in
+          BandLODData(
+            bandIndex: band.bandIndex, minBuffer: Array(band.minBuffer),
+            maxBuffer: Array(band.maxBuffer), rmsBuffer: Array(band.rmsBuffer))
+        }, writeIndex: writeIndex, lodRatio: lodRatio, rawBufferLength: rawBufferLength)
+      return isStillPublished ? copy : nil
     }
   }
 
@@ -269,7 +284,7 @@
   /// 3. Circular buffer storage for streaming visualization
   ///
   /// Uses triple-buffering to provide lock-free snapshot access for 60fps rendering.
-  /// The render thread can always read a consistent snapshot without blocking on audio processing.
+  /// Readers validate copies without blocking audio processing.
   // SAFETY: The processor enforces a single audio-writer model with atomic publication to readers.
   @unsafe public final class MultiBandLODProcessor: @unchecked Sendable {
     // MARK: - Configuration
@@ -354,6 +369,7 @@
 
     /// Index of the slot that's current for reading (atomic for lock-free access).
     private let currentSlotIndex: ManagedAtomic<Int>
+    private let publicationGeneration = ManagedAtomic<UInt64>(0)
 
     /// Counter for LOD commits since last slot swap.
     private var commitsSinceSlotSwap: Int = 0
@@ -545,6 +561,9 @@
       }
 
       unsafe rawWriteIndex.store(currentRawWriteIndex, ordering: .relaxed)
+      if unsafe commitsSinceSlotSwap >= slotSwapInterval {
+        unsafe swapSlots()
+      }
     }
 
     /// Process samples from a contiguous array.
@@ -597,16 +616,12 @@
         unsafe windowStats[i].reset()
       }
 
-      // Periodically swap slots for lock-free reading (~60fps)
+      // Publication happens once, after the complete process call.
       unsafe commitsSinceSlotSwap += 1
-      if unsafe commitsSinceSlotSwap >= slotSwapInterval {
-        unsafe commitsSinceSlotSwap = 0
-        unsafe swapSlots()
-      }
     }
 
     /// Swaps the write slot to become current, picks a new write slot.
-    /// Called periodically from commitLOD while holding the lock.
+    /// Called by the single writer after a process call or by finalize; no lock.
     private func swapSlots() {
       // Current slot is safe for readers; write slot contains freshly committed data.
       let oldCurrent = unsafe currentSlotIndex.load(ordering: .acquiring)
@@ -619,6 +634,15 @@
 
       let publishedSlot = unsafe bufferSlots[newCurrent]
       let nextWriteSlot = unsafe bufferSlots[newWrite]
+
+      publishedSlot.rawWriteIndex = unsafe rawWriteIndex.load(ordering: .relaxed)
+      publishedSlot.generation.store(
+        unsafe publicationGeneration.load(ordering: .relaxed) &+ 1, ordering: .relaxed)
+      // Invalidate old retiring refs BEFORE touching their storage. Readers
+      // also match the slot generation to avoid acquiring between these stores.
+      unsafe currentSlotIndex.store(newCurrent, ordering: .releasing)
+      unsafe publicationGeneration.wrappingIncrement(ordering: .acquiringAndReleasing)
+      unsafe commitsSinceSlotSwap = 0
 
       // The new write slot (old retiring) has been inactive for 2 swap intervals.
       // Copy both the previous interval's delta AND the current interval's delta
@@ -640,9 +664,6 @@
       // Continue writing at the same circular index.
       nextWriteSlot.writeIndex = publishedSlot.writeIndex
       nextWriteSlot.committedLODCount = publishedSlot.committedLODCount
-
-      // Atomically publish the new current slot.
-      unsafe currentSlotIndex.store(newCurrent, ordering: .releasing)
 
       // Rotate roles.
       unsafe retiringSlotIndex = newRetiring
@@ -697,17 +718,24 @@
     /// Returns a zero-copy reference to current LOD data for rendering.
     ///
     /// This method is lock-free and returns a reference to pre-allocated buffers.
-    /// No memory allocation or copying occurs. The returned reference is safe to use
-    /// for rendering because triple-buffering guarantees the audio thread won't
-    /// write to this slot while it's current.
+    /// No memory allocation or copying occurs. The next process call can retire
+    /// this slot but cannot recycle it. Validate `isStillPublished` after upload.
     ///
     /// - Returns: Zero-copy reference to LOD data for GPU rendering.
     public func snapshotRef() -> LODSnapshotRef {
-      let index = unsafe currentSlotIndex.load(ordering: .acquiring)
-      let rawWIdx = unsafe rawWriteIndex.load(ordering: .relaxed)
-      return unsafe LODSnapshotRef(
-        bufferSlots[index], rawStorage: rawBandStorage, rawWriteIndex: rawWIdx,
-      )
+      while true {
+        let generation = unsafe publicationGeneration.load(ordering: .acquiring)
+        let index = unsafe currentSlotIndex.load(ordering: .acquiring)
+        let slot = unsafe bufferSlots[index]
+        guard slot.generation.load(ordering: .acquiring) == generation else { continue }
+        let ref = unsafe LODSnapshotRef(
+          slot, rawStorage: rawBandStorage,
+          generation: generation, liveGeneration: publicationGeneration)
+        guard unsafe publicationGeneration.load(ordering: .acquiring) == generation else {
+          continue
+        }
+        return ref
+      }
     }
 
     /// Provides a frame-scoped zero-copy snapshot reference.
@@ -724,8 +752,9 @@
     ///
     /// - Returns: Complete LOD snapshot ready for GPU rendering.
     public func snapshot() -> MultiBandLODSnapshot {
-      let index = unsafe currentSlotIndex.load(ordering: .acquiring)
-      return unsafe bufferSlots[index].toSnapshot()
+      while true {
+        if let copy = unsafe snapshotRef().toSnapshot() { return copy }
+      }
     }
 
     /// Creates a snapshot with explicit locking (for diagnostics).
@@ -744,11 +773,13 @@
     /// For offline/file-based workflows (e.g. rendering a waveform for an exact
     /// time range), you typically want the final partial window to be included.
     ///
-    /// This commits the current window if it contains at least one sample.
+    /// Commits any partial window and publishes all pending commits, including
+    /// a final full window below the normal publication threshold.
     public func finalize() {
       if unsafe windowStats.first?.count ?? 0 > 0 {
         unsafe commitLOD()
       }
+      if unsafe commitsSinceSlotSwap > 0 { unsafe swapSlots() }
     }
 
     // MARK: - Reset
@@ -775,6 +806,7 @@
       // Reset slot indices
       unsafe writeSlotIndex = 0
       unsafe currentSlotIndex.store(1, ordering: .releasing)
+      unsafe publicationGeneration.store(0, ordering: .releasing)
       unsafe retiringSlotIndex = 2
       unsafe commitsSinceSlotSwap = 0
       unsafe deltaStartWriteIndex = unsafe bufferSlots[writeSlotIndex].writeIndex
