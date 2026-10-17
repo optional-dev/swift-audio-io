@@ -62,6 +62,8 @@
     ) async throws(RecordingError) -> URL {
       let operationID = UUID()
       try await claimStartOperation(operationID)
+      var didStart = false
+      defer { await finishStartOperation(operationID, didStart: didStart) }
       // A self-contradictory request is reduced, not refused: the container
       // yields to the rate (or, for a caller-named file, the rate to the
       // container), and the change is reported in the capture provenance.
@@ -125,7 +127,7 @@
               await cleanUpCancelledSuccessfulStart()
               throw RecordingError.cancelled
             }
-            await finishStartOperation(operationID)
+            didStart = true
             return url
           } catch {
             let recordingError = error as? RecordingError ?? .engineError
@@ -162,8 +164,6 @@
         }
       } catch {
         let recordingError = error as? RecordingError ?? .engineError
-        await finishStartOperation(operationID)
-        await owner.deactivateAudioSessionIfNeeded(reason: "recording start failed")
         throw recordingError
       }
     }
@@ -180,9 +180,12 @@
     }
 
     @MainActor
-    private func finishStartOperation(_ operationID: UUID) {
+    private func finishStartOperation(_ operationID: UUID, didStart: Bool) async {
       guard owner.recordingLifecycleState.startOperationID == operationID else { return }
       owner.recordingLifecycleState.startOperationID = nil
+      if !didStart {
+        await owner.deactivateAudioSessionIfNeeded(reason: "recording start failed")
+      }
     }
 
     @MainActor

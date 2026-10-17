@@ -5,7 +5,7 @@ Make a recording, observe playback, and subscribe to engine events in under thir
 ## Add the package
 
 ```swift
-.package(url: "https://github.com/GoodHatsLLC/swift-audio-io", from: "0.1.0"),
+.package(url: "https://github.com/GoodHatsLLC/swift-audio-io", from: "1.0.0"),
 ```
 
 Add `AudioIO` as a target dependency:
@@ -70,7 +70,7 @@ func runRecording() async throws {
 
 The five concept topics describe the package's shape and the contracts you'll bump into:
 
-- <doc:PlatformMatrix> — iOS 26+ and macOS 26+, and what's iOS-only.
+- <doc:PlatformMatrix> — iOS 27+ and macOS 27+, and what's iOS-only.
 - <doc:ThreadingModel> — which APIs are `@MainActor`, which are `nonisolated`, and where the realtime callback runs.
 - <doc:ErrorHandling> — typed-throws domain errors and the events stream's `.error(_)` case.
 - <doc:Events> — the unified ``AudioIOEvent`` lifecycle stream.

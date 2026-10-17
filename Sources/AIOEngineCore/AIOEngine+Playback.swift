@@ -133,6 +133,7 @@
       await playbackRuntime.cancelPlaybackJog()
     }
 
+    /// Stops playback and releases its resources even when the caller is cancelled.
     @MainActor
     public func stopPlayback() async {
       await playbackRuntime.stopPlayback()

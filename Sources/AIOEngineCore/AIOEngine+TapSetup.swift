@@ -417,11 +417,10 @@
       return result
     }
 
-    /// Installs the node-level input tap, preferring the OS 27
+    /// Installs the node-level input tap using
     /// `installAudioTap(onBus:bufferSize:format:tapProvider:)` — the throwing,
     /// `Sendable` replacement for `installTap`, whose provider receives an
-    /// `AVReadOnlyAudioPCMBuffer` — and falling back to the legacy call on
-    /// earlier systems. Removal is unchanged either way: `removeTap(onBus:)`
+    /// `AVReadOnlyAudioPCMBuffer`. Removal uses `removeTap(onBus:)`, which
     /// is not deprecated.
     ///
     /// The OS 27 path bridges zero-copy via
@@ -439,48 +438,27 @@
       format: AVAudioFormat,
       processingFormat: AVAudioFormat,
     ) throws {
-      #if compiler(>=6.4)
-        // `installAudioTap` and AVReadOnlyAudioPCMBuffer are OS 27 SDK
-        // symbols: `#available` gates them at run time, but naming them at
-        // all requires Xcode 27.
-        if #available(iOS 27.0, macOS 27.0, tvOS 27.0, *) {
-          tapSetupLog.info("Installing input tap via installAudioTap (OS 27 path)")
-          do {
-            try engine.inputNode.installAudioTap(
-              onBus: bus,
-              bufferSize: bufferSize,
-              format: format,
-            ) { @Sendable [self] readOnlyBuffer, time in
-              let buffer =
-                ReadOnlyTapBufferBridge.pcmView(of: readOnlyBuffer)
-                ?? AVAudioPCMBuffer(copying: readOnlyBuffer)
-              self.recording.capture.processAudio(
-                buffer: buffer,
-                time: time,
-                to: processingFormat,
-              )
-            }
-          } catch {
-            throw RecordingError.invalidConfiguration(
-              details: "installAudioTap failed: \(error.localizedDescription)",
-            )
-          }
-          return
-        }
-      #endif
-      tapSetupLog.info("Installing input tap via installTap (pre-OS 27 path)")
-      engine.inputNode.installTap(
-        onBus: bus,
-        bufferSize: bufferSize,
-        format: format,
-        block: { @Sendable [self] buffer, time in
+      tapSetupLog.info("Installing input tap via installAudioTap (OS 27 path)")
+      do {
+        try engine.inputNode.installAudioTap(
+          onBus: bus,
+          bufferSize: bufferSize,
+          format: format,
+        ) { @Sendable [self] readOnlyBuffer, time in
+          let buffer =
+            ReadOnlyTapBufferBridge.pcmView(of: readOnlyBuffer)
+            ?? AVAudioPCMBuffer(copying: readOnlyBuffer)
           self.recording.capture.processAudio(
             buffer: buffer,
             time: time,
             to: processingFormat,
           )
-        },
-      )
+        }
+      } catch {
+        throw RecordingError.invalidConfiguration(
+          details: "installAudioTap failed: \(error.localizedDescription)",
+        )
+      }
     }
 
     /// Applies tap install results to engine state.
@@ -538,19 +516,9 @@
           name: preferredInput.name,
         )
         do {
-          // `auAudioUnit` is deprecated in the OS 27 SDKs in favor of the
-          // scoped `withAUAudioUnit`; same double gate as the tap install.
-          #if compiler(>=6.4)
-            if #available(macOS 27.0, *) {
-              try engine.inputNode.withAUAudioUnit { audioUnit in
-                try audioUnit.setDeviceID(deviceID)
-              }
-            } else {
-              try unsafe engine.inputNode.auAudioUnit.setDeviceID(deviceID)
-            }
-          #else
-            try unsafe engine.inputNode.auAudioUnit.setDeviceID(deviceID)
-          #endif
+          try engine.inputNode.withAUAudioUnit { audioUnit in
+            try audioUnit.setDeviceID(deviceID)
+          }
         } catch {
           throw .captureSourceFailed(
             sourceDescription: preferredInput.description,

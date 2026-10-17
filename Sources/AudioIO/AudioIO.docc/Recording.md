@@ -93,6 +93,10 @@ let url = try await engine.startRecording(configuration: configuration)
 let savedURL = try await engine.stopRecording().completedURL
 ```
 
+Stopping drains the writer and releases audio-session demand even when the calling
+task is cancelled. The drain timeout remains active. Await the stop before
+reusing or discarding the engine.
+
 ``AIOEngine/startRecording(configuration:)`` returns the destination URL once
 the engine is producing output. It performs bounded retry for transient
 audio-session and capture-source readiness failures. The deadline defaults to

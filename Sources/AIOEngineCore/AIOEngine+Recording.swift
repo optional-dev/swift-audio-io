@@ -33,6 +33,8 @@
     /// That position is the total frame count of the capture, across every
     /// rotation, so segment lengths derived from
     /// ``rotateRecordingFile()`` sum to it.
+    /// Caller cancellation does not skip writer drain or session release.
+    /// The writer-drain timeout still bounds shutdown.
     @MainActor
     public func stopRecording() async throws(RecordingError) -> RecordingCompletion {
       try await recordingLifecycle.stopRecording()

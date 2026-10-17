@@ -230,39 +230,17 @@
       #expect(authority.requested == [false])
     }
 
-    // MARK: - iOS 26 degradation
-
     @Test
     @MainActor
-    func `iOS 27 session notification streams degrade to finished streams below iOS 27`()
-      async throws
-    {
+    func `session activation stream stays open until cancelled`() async throws {
       let notifications = AudioEnvironment.Notifications(center: NotificationCenter())
-
-      if #available(iOS 27.0, *) {
-        // Live path: the stream must stay open, so a bounded wait for an
-        // element that never arrives times out rather than terminating.
-        let terminatedEarly = await withTimeoutReturningNil(of: .milliseconds(200)) {
-          for await _ in notifications.sessionDidBecomeActive { return false }
-          return true
-        }
-        #expect(terminatedEarly == nil, "stream should stay open on iOS 27+")
-      } else {
-        // Degraded path: logged no-op, immediately finished, exactly the
-        // posture `availableInputsChanged` already uses on older systems.
-        var activeCount = 0
-        for await _ in notifications.sessionDidBecomeActive { activeCount += 1 }
-        var inactiveCount = 0
-        for await _ in notifications.sessionDidBecomeInactive { inactiveCount += 1 }
-        var resumptionCount = 0
-        for await _ in notifications.resumptionRecommendation { resumptionCount += 1 }
-        #expect(activeCount == 0)
-        #expect(inactiveCount == 0)
-        #expect(resumptionCount == 0)
+      let terminatedEarly = await withTimeoutReturningNil(of: .milliseconds(200)) {
+        for await _ in notifications.sessionDidBecomeActive { return false }
+        return true
       }
+      #expect(terminatedEarly == nil)
     }
 
-    @available(iOS 27.0, *)
     @Test
     @MainActor
     func `a deactivation notification is captured as a neutral value`() async throws {
@@ -282,10 +260,8 @@
 
       // The platform-source adapter only exists when built against the
       // iOS 27 SDK — see `AudioSystemEvent+iOS`.
-      #if compiler(>=6.4)
-        #expect(AudioSessionDeactivationSource(.app) == .app)
-        #expect(AudioSessionDeactivationSource(.system) == .system)
-      #endif
+      #expect(AudioSessionDeactivationSource(.app) == .app)
+      #expect(AudioSessionDeactivationSource(.system) == .system)
       #expect(AudioInterruptionReason(.default) == .default)
       #expect(AudioInterruptionReason(.builtInMicMuted) == .builtInMicMuted)
       #expect(AudioInterruptionReason(.routeDisconnected) == .routeDisconnected)

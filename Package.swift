@@ -1,4 +1,4 @@
-// swift-tools-version: 6.3
+// swift-tools-version: 6.4
 
 import Foundation
 import PackageDescription
@@ -20,7 +20,7 @@ func swiftSettings(_ settings: PackageDescription.SwiftSetting...) -> [PackageDe
 
 let package = Package(
   name: "swift-audio-io",
-  platforms: [.iOS(.v26), .macOS(.v26)],
+  platforms: [.iOS(.v27), .macOS(.v27)],
   products: [
     .library(
       name: "Tools",

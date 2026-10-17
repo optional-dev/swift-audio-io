@@ -18,15 +18,15 @@ concurrency:
 
 jobs:
   test:
-    name: macOS host tests + iOS Simulator build
-    runs-on: macos-26
+    name: macOS tests + iOS lifecycle tests
+    runs-on: xcode-27
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Select Xcode 26.5
-        run: sudo xcode-select -s /Applications/Xcode_26.5.app/Contents/Developer
+      - name: Select Xcode 27.0
+        run: sudo xcode-select -s /Applications/Xcode_27.0.app/Contents/Developer
 
       - name: Toolchain info
         run: |
@@ -36,25 +36,32 @@ jobs:
       - name: Input configuration API guard
         run: ./bin/check-input-configuration-api.sh
 
-      # Full test run on the macOS host: 186 unit tests across 31 suites.
+      # Full test run on the macOS 27 host.
       # This is the suite that gates correctness.
       - name: SwiftPM tests (macOS host)
         run: xcrun swift test --package-path .
 
-      # iOS coverage is compile-only (build-for-testing, not test). The
-      # free-tier GitHub macOS runners are Intel; the iOS Simulator runs
-      # under emulation and its CoreAudio audio-unit stack is unreliable
-      # (AURemoteIO -10851 at session bring-up), so the audio integration
-      # tests can't run deterministically here. What we DO get — and what
-      # has the highest value pre-1.0 — is verification that the iOS-only
-      # code paths (#if canImport(UIKit) / #if os(iOS)) actually compile.
-      # Revisit running the iOS tests when free-tier arm64 macOS runners
-      # land, or on a self-hosted Apple-Silicon runner.
+      # Compile every iOS test, then run the hardware-independent migration
+      # suites. Microphone and route behavior still need device validation.
       - name: iOS Simulator build (compile-only)
         run: |
           xcodebuild build-for-testing \
             -scheme swift-audio-io-Package \
-            -destination 'platform=iOS Simulator,name=iPhone 17 Pro,OS=latest' \
+            -destination 'platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0' \
+            -skipPackagePluginValidation
+
+      - name: iOS lifecycle and cancellation tests
+        run: |
+          xcodebuild test-without-building \
+            -scheme swift-audio-io-Package \
+            -destination 'platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0' \
+            -only-testing:AIOTests/RecordingCancellationTests \
+            -only-testing:AIOTests/RecordingStartReadinessTests \
+            -only-testing:AIOTests/AudioSessionActivationTests \
+            -only-testing:AIOTests/ReadOnlyBufferBridgeTests \
+            -only-testing:ToolsTests/CancellationOperationTests \
+            -parallel-testing-enabled NO \
+            -collect-test-diagnostics never \
             -skipPackagePluginValidation
 
       # Compiles Sources/AudioIO/AudioIO.docc. Catches malformed directives

@@ -12,9 +12,9 @@ AudioIO ships three SwiftPM library products:
 
 Recording, playback, visualization, and the audio-session surface are all driven through a single ``AIOEngine`` instance, with notifications flowing through one unified ``AIOEngine/events`` stream.
 
-## Prerelease status
+## Requirements and stability
 
-AudioIO is pre-`0.1.0`. The public API can change between minor versions. Pin to an exact version if that worries you; semver commitments begin at `1.0.0`. The roadmap describes how `0.x` evolves.
+AudioIO 1.0 requires Swift 6.4, Xcode 27, and iOS 27 or macOS 27. Public APIs follow SemVer: breaking API changes or a higher platform floor require a major release.
 
 ## Topics
 

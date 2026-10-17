@@ -262,133 +262,78 @@
 
       /// An asynchronous stream of notifications for when the available inputs change.
       public var availableInputsChanged: AsyncSignalStream<Void> {
-        if #available(iOS 26.0, *) {
-          return AsyncSignalStream<Void>(
-            source: center.notifications(named: AVAudioSession.availableInputsChangeNotification),
-            map: { _ in () },
-          )
-        } else {
-          log.warning(
-            "availableInputsChanged notifications are not available on this OS version",
-          )
-          let signal = AsyncSignal<Void>()
-          signal.finish()
-          return signal.events()
-        }
+        AsyncSignalStream<Void>(
+          source: center.notifications(named: AVAudioSession.availableInputsChangeNotification),
+          map: { _ in () },
+        )
       }
 
       /// An asynchronous stream of session-activation confirmations.
-      ///
-      /// iOS 27 and later. On iOS 26 the platform posts no such notification,
-      /// so this degrades to a logged, immediately finished stream — the same
-      /// posture as ``availableInputsChanged``.
       public var sessionDidBecomeActive: AsyncSignalStream<Void> {
-        // The iOS 27 notification payload types only exist in the Xcode 27
-        // SDK, so the modern path has to be compiled out entirely on Xcode 26
-        // rather than merely gated by `#available`.
-        #if compiler(>=6.4)
-          if #available(iOS 27.0, *) {
-            return AsyncSignalStream<Void>(
-              source: center.notifications(named: AVAudioSession.didBecomeActiveNotification),
-              map: { _ in
-                log.info("Environment: audio session did become active")
-                return ()
-              },
-            )
-          }
-        #endif
-        log.warning(
-          "sessionDidBecomeActive notifications are not available on this OS version",
+        AsyncSignalStream<Void>(
+          source: center.notifications(named: AVAudioSession.didBecomeActiveNotification),
+          map: { _ in
+            log.info("Environment: audio session did become active")
+            return ()
+          },
         )
-        let signal = AsyncSignal<Void>()
-        signal.finish()
-        return signal.events()
       }
 
       /// An asynchronous stream of session deactivations, carrying who
       /// deactivated the session and why.
-      ///
-      /// iOS 27 and later; degrades to a finished stream on iOS 26.
       public var sessionDidBecomeInactive: AsyncSignalStream<AudioSessionDeactivation> {
-        // The iOS 27 notification payload types only exist in the Xcode 27
-        // SDK, so the modern path has to be compiled out entirely on Xcode 26
-        // rather than merely gated by `#available`.
-        #if compiler(>=6.4)
-          if #available(iOS 27.0, *) {
-            return AsyncSignalStream<AudioSessionDeactivation>(
-              source: center.notifications(named: AVAudioSession.didBecomeInactiveNotification),
-              compactMap: { (notification: Notification) -> AudioSessionDeactivation? in
-                guard
-                  let context = notification.userInfo?[AVAudioSession.deactivationContextKey]
-                    as? AVAudioSession.DeactivationContext
-                else {
-                  log.error(
-                    """
-                    didBecomeInactive notification inapplicable:
-                    info: \(String(dump: notification.userInfo), privacy: .public)
-                    """,
-                  )
-                  return nil
-                }
-                let deactivation = AudioSessionDeactivation(platformContext: context)
-                log.warning(
-                  "env, session did become inactive: \(deactivation.userLabel, privacy: .public)",
-                )
-                return deactivation
-              },
+        AsyncSignalStream<AudioSessionDeactivation>(
+          source: center.notifications(named: AVAudioSession.didBecomeInactiveNotification),
+          compactMap: { (notification: Notification) -> AudioSessionDeactivation? in
+            guard
+              let context = notification.userInfo?[AVAudioSession.deactivationContextKey]
+                as? AVAudioSession.DeactivationContext
+            else {
+              log.error(
+                """
+                didBecomeInactive notification inapplicable:
+                info: \(String(dump: notification.userInfo), privacy: .public)
+                """,
+              )
+              return nil
+            }
+            let deactivation = AudioSessionDeactivation(platformContext: context)
+            log.warning(
+              "env, session did become inactive: \(deactivation.userLabel, privacy: .public)",
             )
-          }
-        #endif
-        log.warning(
-          "sessionDidBecomeInactive notifications are not available on this OS version",
+            return deactivation
+          },
         )
-        let signal = AsyncSignal<AudioSessionDeactivation>()
-        signal.finish()
-        return signal.events()
       }
 
       /// An asynchronous stream of the system's resumption recommendations.
       ///
       /// The element is `true` when the system recommends resuming.
-      /// iOS 27 and later; degrades to a finished stream on iOS 26.
       public var resumptionRecommendation: AsyncSignalStream<Bool> {
-        // The iOS 27 notification payload types only exist in the Xcode 27
-        // SDK, so the modern path has to be compiled out entirely on Xcode 26
-        // rather than merely gated by `#available`.
-        #if compiler(>=6.4)
-          if #available(iOS 27.0, *) {
-            return AsyncSignalStream<Bool>(
-              source: center.notifications(
-                named: AVAudioSession.resumptionRecommendationNotification,
-              ),
-              compactMap: { (notification: Notification) -> Bool? in
-                guard
-                  let context = notification.userInfo?[AVAudioSession.resumptionContextKey]
-                    as? AVAudioSession.ResumptionContext
-                else {
-                  log.error(
-                    """
-                    resumptionRecommendation notification inapplicable:
-                    info: \(String(dump: notification.userInfo), privacy: .public)
-                    """,
-                  )
-                  return nil
-                }
-                let shouldResume = context.recommendation == .shouldResume
-                log.warning(
-                  "env, resumption recommendation: \(shouldResume ? "resume" : "do not resume", privacy: .public)",
-                )
-                return shouldResume
-              },
+        AsyncSignalStream<Bool>(
+          source: center.notifications(
+            named: AVAudioSession.resumptionRecommendationNotification,
+          ),
+          compactMap: { (notification: Notification) -> Bool? in
+            guard
+              let context = notification.userInfo?[AVAudioSession.resumptionContextKey]
+                as? AVAudioSession.ResumptionContext
+            else {
+              log.error(
+                """
+                resumptionRecommendation notification inapplicable:
+                info: \(String(dump: notification.userInfo), privacy: .public)
+                """,
+              )
+              return nil
+            }
+            let shouldResume = context.recommendation == .shouldResume
+            log.warning(
+              "env, resumption recommendation: \(shouldResume ? "resume" : "do not resume", privacy: .public)",
             )
-          }
-        #endif
-        log.warning(
-          "resumptionRecommendation notifications are not available on this OS version",
+            return shouldResume
+          },
         )
-        let signal = AsyncSignal<Bool>()
-        signal.finish()
-        return signal.events()
       }
 
       /// An asynchronous stream of notifications for when the media services are lost.
@@ -446,9 +391,7 @@
         "overrideMutedMicrophoneInterruption"
       } else {
         #if os(iOS)
-          if #available(iOS 26.0, *),
-            self == AVAudioSession.CategoryOptions.bluetoothHighQualityRecording
-          {
+          if self == AVAudioSession.CategoryOptions.bluetoothHighQualityRecording {
             "bluetoothHighQualityRecording"
           } else {
             "unknown"

@@ -2,7 +2,7 @@
 
 A Swift audio I/O engine for iOS and macOS: microphone and (macOS) system-audio recording, playback, level-of-detail visualization data, and microphone-health monitoring. Built on AVFoundation, with Swift 6 strict concurrency and typed throws throughout.
 
-> **Status: pre-1.0.** APIs may change between `0.x` releases. We commit to SemVer starting at `1.0.0`. See [ROADMAP.md](ROADMAP.md).
+> **Version 1.0.** Requires Swift 6.4, Xcode 27, and iOS 27 or macOS 27. Public APIs follow SemVer; raising the platform floor requires a major release. See [ROADMAP.md](ROADMAP.md).
 
 ## Install
 
@@ -10,7 +10,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/GoodHatsLLC/swift-audio-io.git", from: "0.1.0"),
+    .package(url: "https://github.com/GoodHatsLLC/swift-audio-io.git", from: "1.0.0"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [
@@ -76,12 +76,25 @@ For a complete recording-and-playback demo with a live waveform — including a 
 
 | Platform | Minimum | Status |
 |----------|---------|--------|
-| iOS      | 26.0    | Primary |
-| macOS    | 26.0    | Primary |
-| Swift    | 6.3     | Required |
-| Xcode    | 26.0    | Required |
+| iOS      | 27.0    | Primary |
+| macOS    | 27.0    | Primary |
+| Swift    | 6.4     | Required |
+| Xcode    | 27.0    | Required |
 
 Other Apple platforms (tvOS, watchOS, visionOS) are not currently supported. See [ROADMAP.md](ROADMAP.md).
+
+## Cancellation and cleanup
+
+Recording stop, playback stop, and audio-session hold release finish their
+mandatory cleanup even when the caller is cancelled. Startup and environment
+lifecycles use asynchronous `defer`; cancellation-sensitive cleanup uses Swift
+6.4 cancellation shields. Callers should still await these operations.
+
+The recording drain retains one awaited owned task around its bounded timeout
+race. On Apple Swift 6.4 / OS 27, cancellation arriving during a parent shield
+can still cancel task-group children; the task boundary prevents premature drain
+completion while preserving explicit timeout cancellation. The regression tests
+cover cancellation both before stop and while draining, plus a stalled writer.
 
 ## What's in the box
 
@@ -104,7 +117,7 @@ See [NOT_AUDIO_IO.md](NOT_AUDIO_IO.md) for the full list and reasoning. Examples
 ## Documentation
 
 - DocC catalog: hosted at [goodhats.github.io/swift-audio-io](https://goodhats.github.io/swift-audio-io) (post-1.0).
-- API surface: every public type is exercised in `Tests/PublicAPISnapshotTests` — that file is the canonical "what's stable" reference until DocC ships.
+- API surface: every public type is exercised in `Tests/AIOTests/PublicAPISnapshot.swift` — that file checks the public surface.
 
 ## Contributing
 

@@ -2,6 +2,8 @@
 
 A minimum-viable sample app for the AudioIO Swift package. One screen, one record button, one waveform, one play button. iOS + macOS from a single SwiftUI codebase.
 
+Requires Xcode 27 / Swift 6.4 and iOS 27 or macOS 27.
+
 ## What it demonstrates
 
 - **The unified events stream** — `AudioIODemoViewModel.init` subscribes to `engine.events` *before* the caller can drive the engine. This is load-bearing: `AsyncBroadcaster` does not replay events for late subscribers.
@@ -19,7 +21,7 @@ A minimum-viable sample app for the AudioIO Swift package. One screen, one recor
 ## Run it
 
 ```bash
-cd Packages/AIO/Examples/AudioIODemo
+cd Examples/AudioIODemo
 xcodegen generate
 open AudioIODemo.xcodeproj
 ```
@@ -27,7 +29,7 @@ open AudioIODemo.xcodeproj
 Or from the command line:
 
 ```bash
-xcodebuild build -project AudioIODemo.xcodeproj -scheme AudioIODemo -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+xcodebuild build -project AudioIODemo.xcodeproj -scheme AudioIODemo -destination 'platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0'
 xcodebuild build -project AudioIODemo.xcodeproj -scheme AudioIODemo -destination 'platform=macOS'
 ```
 

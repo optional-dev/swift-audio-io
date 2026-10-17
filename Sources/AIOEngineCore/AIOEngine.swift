@@ -220,34 +220,11 @@
 
     // MARK: - Stored Properties
 
-    // SAFETY: AVAudioEngine and AVAudioPlayerNode are mutable Apple framework
-    // types that cannot adopt Sendable. All graph mutations go through
-    // `engineControlQueue` (a serial DispatchQueue) via the
-    // runOnEngineControlQueue / withEngineControlQueue helpers below. The
-    // real-time tap callback thread reads a reference captured at install
-    // time and communicates with the control thread via lock-free
-    // SPSCRingBuffers + ManagedAtomic. See the architecture block above for
-    // the full thread topology. Swift's type system cannot model dispatch
-    // queue serialization, so the `nonisolated(unsafe)` annotation tells it
-    // "trust me, this is covered by the queue invariant."
-    //
-    // The Xcode 27 SDK marks both types `Sendable`, which makes the
-    // annotation redundant there and a warning; the shipping Xcode 26 SDK
-    // does not, and rejects the class outright without it. Collapse this
-    // back to the unannotated form once Xcode 26 support is dropped.
-    #if compiler(>=6.4)
-      package let engine = AVAudioEngine()
-      // SAFETY: Same queue invariant as `engine` above — player is an
-      // AVAudioPlayerNode attached to the engine graph and mutated only from
-      // engineControlQueue.
-      package let player = AVAudioPlayerNode()
-    #else
-      package nonisolated(unsafe) let engine = AVAudioEngine()
-      // SAFETY: Same queue invariant as `engine` above — player is an
-      // AVAudioPlayerNode attached to the engine graph and mutated only from
-      // engineControlQueue.
-      package nonisolated(unsafe) let player = AVAudioPlayerNode()
-    #endif
+    // These SDK types are Sendable. Graph mutations still require the serial
+    // engineControlQueue; real-time callbacks exchange data through the rings
+    // and atomics described above.
+    package let engine = AVAudioEngine()
+    package let player = AVAudioPlayerNode()
     // SAFETY: Same queue invariant as `engine` above. The jog source/time-pitch
     // nodes are attached, connected, disconnected, and detached only on
     // engineControlQueue; the source render block communicates with control
@@ -462,8 +439,7 @@
 
     #if os(iOS)
       /// The engine's own activation path, used only when
-      /// ``audioSessionAuthority`` is `nil`. Chosen once here so the
-      /// `#available(iOS 27, *)` check is not repeated per request.
+      /// ``audioSessionAuthority`` is `nil`. Tests can inject an activator.
       package let sessionActivator: any AudioSessionActivating
     #endif
 
@@ -593,7 +569,7 @@
       self.recordingEnvironment = recordingEnvironment
       #if os(iOS)
         sessionActivator =
-          recordingEnvironment.sessionActivator ?? PlatformAudioSessionActivator.make()
+          recordingEnvironment.sessionActivator ?? NativeAudioSessionActivator()
       #endif
       audioRecoveryState = AudioRecoveryState()
       // Every stored property is initialized, so `self` can be handed over.

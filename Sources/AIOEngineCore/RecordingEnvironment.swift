@@ -42,7 +42,7 @@
     #if os(iOS)
       /// Replaces the engine-managed platform activation path used when
       /// ``AIOEngine/audioSessionAuthority`` is `nil`. `nil` selects
-      /// ``PlatformAudioSessionActivator/make()``.
+      /// ``NativeAudioSessionActivator``.
       ///
       /// Set after initialization rather than through the memberwise
       /// initializer: the field only exists on iOS, and `#if` cannot gate a

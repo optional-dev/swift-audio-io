@@ -98,13 +98,10 @@ finished the transition:
 try await envManager.setAudioSessionActive(true)
 ```
 
-There is exactly one activation code path in the package. On iOS 27 and later
-it uses `AVAudioSession.activate(options:)` / `deactivate(options:)`; on iOS 26
-it uses the synchronous `setActive(_:options:)` serialized behind the internal
-session-access gate. The path is chosen once, when the manager (or an
-engine-managed ``AIOEngine``) is created. Deactivation always passes
-`.notifyOthersOnDeactivation` on both versions, so an interrupted app is still
-told it may resume.
+The platform implementation uses `AVAudioSession.activate(options:)` and
+`deactivate(options:)`. Deactivation passes `.notifyOthersOnDeactivation` so
+an interrupted app is told it may resume. Synchronous session reads and
+preference writes still use the session-access gate.
 
 Three rules govern overlapping requests:
 
@@ -136,9 +133,6 @@ notifications, surfaced as three more ``AudioSystemEvent`` cases:
   platform has already deactivated regardless of what the manager believed.
 - ``AudioSystemEvent/resumptionRecommended(_:)`` — the system's advice on
   whether to resume.
-
-On iOS 26 these three streams degrade to logged no-ops and the events are never
-emitted, so consumers written against them work unchanged on both versions.
 
 One interruption can surface on *both* channels. The dedup rule: interruption
 events are the recovery trigger, and `sessionDeactivated` stages recovery only

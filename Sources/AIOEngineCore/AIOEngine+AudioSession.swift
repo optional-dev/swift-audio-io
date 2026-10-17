@@ -128,7 +128,9 @@
       }
 
       do {
-        try await setAudioSessionDemand(active: false)
+        try await withTaskCancellationShield { () async throws(SessionError) in
+          try await setAudioSessionDemand(active: false)
+        }
       } catch let wrapped {
         log.error(
           "Failed to release audio session demand (\(reason, privacy: .public)): \(wrapped, privacy: .public)",

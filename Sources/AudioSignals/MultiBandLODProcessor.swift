@@ -578,7 +578,6 @@
     /// Process samples from an AVAudioPCMBuffer (first channel only).
     ///
     /// - Parameter buffer: Audio buffer to process.
-    @available(iOS 13.0, macOS 10.15, *)
     public func process(_ buffer: AVFAudio.AVAudioPCMBuffer) {
       guard let floatData = unsafe buffer.floatChannelData?[0] else { return }
       let bufferPointer = unsafe UnsafeBufferPointer(

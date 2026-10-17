@@ -261,6 +261,7 @@
     public func run() async throws(ManagerError) {
       guard !isRunning else { throw .alreadyRunning }
       isRunning = true
+      defer { await finishRun() }
       await reconcileInputConfiguration()
       currentRoute = await platformAudioBackend.currentRoute()
       isReady = true
@@ -268,7 +269,11 @@
       await backendRouteTask?.cancel()
       backendRouteTask = routeObserver.makeRouteTask()
 
-      await withCancellationOperation {
+      await withCancellationOperation {}
+    }
+
+    private func finishRun() async {
+      await withTaskCancellationShield {
         await backendRouteTask?.cancel()
         backendRouteTask = nil
         isAudioSessionActive = false

@@ -151,15 +151,13 @@
         env: env,
         errorManager: errorManager,
         defaults: defaults,
-        sessionActivator: PlatformAudioSessionActivator.make(),
+        sessionActivator: NativeAudioSessionActivator(),
       )
     }
 
     /// Creates a manager with a replaceable activation path.
     ///
-    /// The activator is chosen once here rather than per request, so the
-    /// `#available(iOS 27, *)` check happens exactly once per manager. Tests
-    /// substitute a fake to assert ordering without a live `AVAudioSession`.
+    /// Tests substitute a fake to assert ordering without a live `AVAudioSession`.
     package init(
       env: AudioEnvironment,
       errorManager: any ErrorManaging,

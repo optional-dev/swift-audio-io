@@ -5,7 +5,6 @@ import OrderedCollections
 import Synchronization
 import os
 
-@available(macOS 15.0, iOS 18.0, watchOS 11.0, tvOS 18.0, *)
 public final class AsyncBroadcaster<Element: Sendable>: AsyncSequence, Sendable {
   public typealias Element = Element
 

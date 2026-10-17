@@ -2,11 +2,11 @@
 
 import Testing
 
+@testable import AIOAudioSession
+
 #if os(iOS)
   import AVFAudio
 #endif
-
-@testable import AIOAudioSession
 
 struct AudioSessionConfigurationTests {
   @Test
@@ -43,15 +43,13 @@ struct AudioSessionConfigurationTests {
         useMeasurement: false, bluetoothMicrophone: .highQualityWhenAvailable,
       )
       #expect(highQuality.options.contains(.allowBluetoothHFP))
-      if #available(iOS 26.0, *) {
-        #expect(highQuality.options.contains(.bluetoothHighQualityRecording))
-        // High-quality Bluetooth recording is default-mode only; measurement
-        // configurations must not carry the option.
-        let measurement = AudioSessionConfiguration.recordingConfiguration(
-          useMeasurement: true, bluetoothMicrophone: .highQualityWhenAvailable,
-        )
-        #expect(!measurement.options.contains(.bluetoothHighQualityRecording))
-      }
+      #expect(highQuality.options.contains(.bluetoothHighQualityRecording))
+      // High-quality Bluetooth recording is default-mode only; measurement
+      // configurations must not carry the option.
+      let measurement = AudioSessionConfiguration.recordingConfiguration(
+        useMeasurement: true, bluetoothMicrophone: .highQualityWhenAvailable,
+      )
+      #expect(!measurement.options.contains(.bluetoothHighQualityRecording))
     #else
       // macOS has no AVAudioSession; the parameter is accepted and ignored.
       let a = AudioSessionConfiguration.recordingConfiguration(

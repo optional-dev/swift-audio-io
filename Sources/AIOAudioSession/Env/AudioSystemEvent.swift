@@ -12,16 +12,12 @@ public enum AudioSystemEvent: Sendable, Hashable {
   /// The platform reported that the session became active.
   ///
   /// This is a confirmation and reconciliation signal, not a recovery trigger.
-  /// iOS 27 and later only; iOS 26 never emits it.
   case sessionActivated
   /// The platform reported that the session became inactive, and why.
-  ///
-  /// iOS 27 and later only; iOS 26 signals the same underlying conditions
-  /// through ``interruptionBegan`` alone.
   case sessionDeactivated(AudioSessionDeactivation)
   /// The system's recommendation on whether interrupted audio should resume.
   ///
-  /// iOS 27 and later only. It is advice about *playback*: recording recovery
+  /// It is advice about *playback*: recording recovery
   /// is never driven by it.
   case resumptionRecommended(Bool)
 }

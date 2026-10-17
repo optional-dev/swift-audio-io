@@ -6,6 +6,7 @@ public enum CancellationAwaitResult<T> {
   case cancelled(T)
 }
 
+/// Waits for cancellation, then awaits a shielded cleanup action.
 public func awaitCancellation<T>(
   isolation _: (any Actor)? = #isolation,
   then action: () async -> T,
@@ -25,9 +26,10 @@ public func awaitCancellation<T>(
     let continuation = mutex.withLock { $0.take() }
     continuation?.resume()
   }
-  return await .cancelled(action())
+  return await .cancelled(withTaskCancellationShield { await action() })
 }
 
+/// Waits for cancellation, awaits shielded cleanup, then throws cancellation.
 public func awaitCancellation(
   isolation _: (any Actor)? = #isolation,
   then action: () async -> Void,
@@ -48,7 +50,7 @@ public func awaitCancellation(
     mutex.withLock { $0.take() }?.resume()
   }
 
-  await action()
+  await withTaskCancellationShield { await action() }
   throw CancellationError()
 }
 

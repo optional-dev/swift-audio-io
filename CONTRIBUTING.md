@@ -12,9 +12,9 @@ If you're unsure whether something is in scope, open a Discussion (not an issue)
 
 Requirements:
 
-- macOS 26+ (host)
-- Xcode 26+
-- Swift 6.3 toolchain (bundled with Xcode 26)
+- macOS 27+ (host)
+- Xcode 27+
+- Swift 6.4 toolchain (bundled with Xcode 27)
 
 Clone and run the tests:
 
@@ -32,16 +32,16 @@ Some tests exercise `AVAudioSession`, which requires the simulator:
 
 ```bash
 xcodebuild test \
-  -scheme AudioIO \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+  -scheme swift-audio-io-Package \
+  -destination 'platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0'
 ```
 
 ### Running the demo app
 
 ```bash
 cd Examples/AudioIODemo
-xcrun swift build
-open Package.swift  # then run from Xcode
+xcodegen generate
+open AudioIODemo.xcodeproj
 ```
 
 ## PR conventions
@@ -50,7 +50,7 @@ open Package.swift  # then run from Xcode
 - **Title**: imperative mood, no scope prefix needed (`Fix race in RecordingRuntime startup`, not `fix: race in startup`).
 - **Size**: small is good. Multi-feature PRs get split.
 - **Tests**: every behavior change needs a test. Bug fixes need a regression test that fails before the fix. Refactors need to leave coverage at or above the baseline.
-- **Public API changes**: must update `Tests/PublicAPISnapshotTests/PublicAPISnapshot.swift`. If you can't, the change is breaking — see "Stability" below.
+- **Public API changes**: must update `Tests/AIOTests/PublicAPISnapshot.swift`. If you can't, the change is breaking — see "Stability" below.
 
 ### Commit style
 
@@ -58,9 +58,7 @@ Conventional commits are welcome but not required. We care about clear commit me
 
 ## Stability
 
-While we're at `0.x`, the public API can change between minor versions. Don't propose breaking changes without a justification — but if you have one, we'll consider it.
-
-After `1.0`, breaking changes require a SemVer-major. The bar will be much higher.
+Starting at `1.0.0`, breaking public API changes and platform requirement increases require a SemVer-major release.
 
 ### What counts as "public API"
 
@@ -68,7 +66,7 @@ Anything reachable from `import AudioIO` without `@_spi(...)`. Symbols behind `@
 
 ## Testing requirements
 
-- Every public type is constructed at least once in `Tests/PublicAPISnapshotTests/`. This is the canonical "does the API still exist" check.
+- Every public type is constructed at least once in `Tests/AIOTests/PublicAPISnapshot.swift`. This is the canonical "does the API still exist" check.
 - New audio-engine behavior should have a test in `Tests/AudioIOEngineTests/` or the relevant subdirectory.
 - Visualization changes need a test in `Tests/VisualizationTests/`.
 - Cross-platform behavior must be tested on both iOS Simulator and macOS host targets where applicable.

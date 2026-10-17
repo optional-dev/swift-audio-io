@@ -28,6 +28,6 @@ public final class AudioSessionHold {
   public func release() async {
     guard let handler = releaseHandler else { return }
     releaseHandler = nil
-    await handler()
+    await withTaskCancellationShield { await handler() }
   }
 }

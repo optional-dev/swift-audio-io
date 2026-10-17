@@ -37,7 +37,6 @@ extension AsyncThrowingStream where Failure == any Error, Element: Sendable {
 
 extension AsyncStream {
   /// Type erasure of non-failing async sequence.
-  @available(iOS 18, *)
   public init<S: AsyncSequence>(isolation: isolated (any Actor)? = #isolation, _ source: S)
   where S.Element == Element, S.Failure == Never, Element: Sendable {
     let (stream, cont) = AsyncStream.makeStream(bufferingPolicy: .unbounded)

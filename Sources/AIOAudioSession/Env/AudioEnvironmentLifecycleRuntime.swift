@@ -35,7 +35,7 @@
         audioEnvironmentLifecycleLog.info("🔊 AudioEnvironmentManager.run() started")
 
         owner.isRunning = true
-        defer { owner.isRunning = false }
+        defer { await finish() }
 
         var isConfigured = false
         var configureAttempt = 0
@@ -75,23 +75,23 @@
 
         await subscribe()
 
-        let wasActive = owner.isAudioSessionActive
-        await withCancellationOperation {
-          if wasActive {
+      }
+
+      @MainActor
+      private func finish() async {
+        await withTaskCancellationShield {
+          if owner.isAudioSessionActive {
             do {
               try await owner.setAudioSessionActive(false)
             } catch {
               audioEnvironmentLifecycleLog.error(
-                "Failed to deactivate AudioSession on cancellation: \(error, privacy: .public)",
+                "Failed to deactivate AudioSession on shutdown: \(error, privacy: .public)",
               )
             }
           }
+          owner.isRunning = false
+          audioEnvironmentLifecycleLog.info("🔇 AudioEnvironmentManager.run() finished")
         }
-
-        let deactivationSuffix = wasActive ? ", deactivating AudioSession" : ""
-        audioEnvironmentLifecycleLog.info(
-          "🔇AudioEnvironmentManager.run() finished\(deactivationSuffix, privacy: .public)",
-        )
       }
 
       /// Subscribes to all AVAudioSession notification streams.
@@ -126,8 +126,7 @@
               }
             }
           }
-          // iOS 27 session-state channel. These streams are finished
-          // immediately on iOS 26, so each loop exits at once there.
+          // Session-state confirmations supplement interruption notifications.
           group.addTask { [self] in
             for await _ in env.notifications.sessionDidBecomeActive {
               if Task.isCancelled { return }

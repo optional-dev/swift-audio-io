@@ -774,15 +774,23 @@
 
       @MainActor
       func gracefulStop() async {
-        log.info("gracefulStop requested")
-        // Raise the teardown sentinel BEFORE enqueuing graph teardown and before
-        // the drain `await` (where another @MainActor handler can interleave). A
-        // route-change / tap-interval reinstall that passes its `guard isRecording`
-        // during the drain — `isRecording` is flipped false only after the await —
-        // then bails on the serial queue instead of reinstalling onto the graph
-        // this stop is tearing down. See `engineTearingDown`.
+        // Withdraw capture before the first suspension, so route-change or
+        // tap-interval work cannot reinstall onto a graph being torn down.
         owner.engineTearingDown.store(true, ordering: .sequentiallyConsistent)
         stopCaptureBackend(mode: .graceful)
+        // Apple Swift 6.4 / OS 27 can still propagate cancellation arriving
+        // during a shield into task-group children. Keep this one awaited
+        // task boundary so caller cancellation cannot end the drain/timeout
+        // race early. The group's own cancelAll still stops losing children.
+        let cleanup = ActorOwnedWork(inheriting: MainActor.shared) {
+          await withTaskCancellationShield { await finishRecording() }
+        }
+        await cleanup.value
+      }
+
+      @MainActor
+      private func finishRecording() async {
+        log.info("gracefulStop requested")
         log.info("gracefulStop draining writer sessions")
         let stopDrainTimeout = owner.stopDrainTimeout
         let stopDrainTimeoutPolicy = TimeoutPolicy(stopDrainTimeout)

@@ -78,7 +78,7 @@ public enum BluetoothMicrophonePolicy: Hashable, Sendable {
         options.insert(.allowBluetoothHFP)
         // High-quality Bluetooth recording is default-mode only; combining it
         // with measurement mode would be rejected at category set.
-        if #available(iOS 26.0, *), !useMeasurement {
+        if !useMeasurement {
           options.insert(.bluetoothHighQualityRecording)
         }
       }

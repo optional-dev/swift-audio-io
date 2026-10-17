@@ -757,6 +757,11 @@
 
     @MainActor
     func stopPlayback() async {
+      await withTaskCancellationShield { await finishPlayback() }
+    }
+
+    @MainActor
+    private func finishPlayback() async {
       await cancelPlaybackJog()
       // Detach the finished file on the main actor, then tear down the graph and
       // close the file together on the engine-control queue — the file close

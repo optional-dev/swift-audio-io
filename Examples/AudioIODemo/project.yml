@@ -1,10 +1,11 @@
 name: AudioIODemo
 
 options:
+  xcodeVersion: "27.0"
   bundleIdPrefix: com.example
   deploymentTarget:
-    iOS: "26.2"
-    macOS: "26.2"
+    iOS: "27.0"
+    macOS: "27.0"
   developmentLanguage: en
   createIntermediateGroups: true
   groupSortPosition: top
@@ -16,10 +17,10 @@ packages:
 
 settings:
   base:
-    SWIFT_VERSION: "6.2"
+    SWIFT_VERSION: "6.0"
     SWIFT_STRICT_CONCURRENCY: complete
-    IPHONEOS_DEPLOYMENT_TARGET: "26.2"
-    MACOSX_DEPLOYMENT_TARGET: "26.2"
+    IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
     SDKROOT: auto
     SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
   configs:
@@ -36,8 +37,8 @@ targets:
     type: application
     supportedDestinations: [iOS, macOS]
     deploymentTarget:
-      iOS: "26.2"
-      macOS: "26.2"
+      iOS: "27.0"
+      macOS: "27.0"
 
     sources:
       - path: AudioIODemo

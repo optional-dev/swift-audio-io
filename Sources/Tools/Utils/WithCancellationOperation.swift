@@ -1,6 +1,6 @@
 // © GoodHatsLLC
 
-/// Suspend until the current task context is cancelled, then execute the operation.
+/// Suspend until cancellation, then await the operation with cancellation shielded.
 public func withCancellationOperation<T: Sendable>(
   isolation: isolated (any Actor)? = #isolation,
   operation: () async -> T,
@@ -9,7 +9,7 @@ public func withCancellationOperation<T: Sendable>(
   return await withTaskCancellationHandler(
     operation: {
       _ = await didCancel()
-      return await operation()
+      return await withTaskCancellationShield { await operation() }
     },
     onCancel: {
       try? didCancel.yield(())
@@ -18,7 +18,7 @@ public func withCancellationOperation<T: Sendable>(
   )
 }
 
-/// Suspend until the current task context is cancelled, then execute the operation.
+/// Suspend until cancellation, then await the operation with cancellation shielded.
 public func withCancellationOperation<T: Sendable, Failure: AudioError>(
   isolation: isolated (any Actor)? = #isolation,
   operation: () async throws(Failure) -> T,
@@ -28,7 +28,7 @@ public func withCancellationOperation<T: Sendable, Failure: AudioError>(
     return try await withTaskCancellationHandler(
       operation: {
         _ = await didCancel()
-        return try await operation()
+        return try await withTaskCancellationShield { try await operation() }
       },
       onCancel: {
         try? didCancel.yield(())

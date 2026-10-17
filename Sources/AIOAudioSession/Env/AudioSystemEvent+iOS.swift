@@ -18,37 +18,29 @@
     }
   }
 
-  // The iOS 27 SDK is required to *name* these platform types — `@available`
-  // gates them at run time, not at compile time. Built against the Xcode 26
-  // SDK the adapters are absent and the session lifecycle keeps to its iOS 26
-  // path; see `AudioEnvironment` and `PlatformAudioSessionActivator`.
-  #if compiler(>=6.4)
-    @available(iOS 27.0, *)
-    extension AudioSessionDeactivation {
-      /// Converts the iOS 27 deactivation context into the neutral value the
-      /// recovery policy consumes. Per ADR 0002 the raw platform type never
-      /// leaves this adapter.
-      package init(platformContext context: AVAudioSession.DeactivationContext) {
-        self.init(
-          source: AudioSessionDeactivationSource(context.source),
-          interruptionReason: context.interruptionContext.map {
-            AudioInterruptionReason($0.reason)
-          },
-        )
-      }
+  extension AudioSessionDeactivation {
+    /// Converts the iOS 27 deactivation context into the neutral value the
+    /// recovery policy consumes. Per ADR 0002 the raw platform type never
+    /// leaves this adapter.
+    package init(platformContext context: AVAudioSession.DeactivationContext) {
+      self.init(
+        source: AudioSessionDeactivationSource(context.source),
+        interruptionReason: context.interruptionContext.map {
+          AudioInterruptionReason($0.reason)
+        },
+      )
     }
+  }
 
-    @available(iOS 27.0, *)
-    extension AudioSessionDeactivationSource {
-      package init(_ source: AVAudioSession.DeactivationSource) {
-        switch source {
-        case .app: self = .app
-        case .system: self = .system
-        @unknown default: self = .unknown
-        }
+  extension AudioSessionDeactivationSource {
+    package init(_ source: AVAudioSession.DeactivationSource) {
+      switch source {
+      case .app: self = .app
+      case .system: self = .system
+      @unknown default: self = .unknown
       }
     }
-  #endif
+  }
 
   extension AudioInterruptionReason {
     package init(_ reason: AVAudioSession.InterruptionReason) {
